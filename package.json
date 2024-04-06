@@ -15,8 +15,11 @@
     "koishi",
     "plugin"
   ],
-  "devDependencies": {},
   "peerDependencies": {
     "koishi": "^4.17.3"
+  },
+  "dependencies": {
+    "liquidjs": "^10.10.2",
+    "yaml": "^2.4.1"
   }
 }
