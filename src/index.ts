@@ -40,7 +40,9 @@ export const Config: Schema<Config> = Schema.object({
       }),
       Schema.object({
         pro_prompt: Schema.const(true).required(),
-        prompt_directory: Schema.path()
+        prompt_directory: Schema.path({
+          filters: ["directory"],
+        })
           .default("./sus-chat")
           .description("提示词文件所在目录"),
         default_prompt: Schema.string()
@@ -71,28 +73,30 @@ export function apply(ctx: Context, config: Config) {
     );
     return result.content;
   });
-  ctx.command("sus.prom [name:string]").action(async (s, name) => {
-    if (!config.prompt.pro_prompt) {
-      return server.liquid.render(server.prompt_str, {
-        session: JSON.parse(JSON.stringify(s.session)),
-      });
-    }
-    if (!name) {
-      return server.prompts.names.join("\n");
-    }
-    return JSON.stringify(
-      server.prompts.get(name, {
-        session: JSON.parse(JSON.stringify(s.session)),
-      })
-    );
-  });
+  if (config.prompt.pro_prompt)
+    ctx.command("sus.prom [name:string]").action(async (s, name) => {
+      if (!config.prompt?.pro_prompt) {
+        return server.liquid.render(server.prompt_str, {
+          session: JSON.parse(JSON.stringify(s.session)),
+        });
+      }
+      if (!name) {
+        return server.prompts.names.join("\n");
+      }
+      return JSON.stringify(
+        server.prompts.get(name, {
+          session: JSON.parse(JSON.stringify(s.session)),
+        })
+      );
+    });
   ctx.command("sus.eval <content:text>").action(async (s, content) => {
     const result = await server.liquid.parseAndRender(content, {
       session: JSON.parse(JSON.stringify(s.session)),
     });
     return result;
   });
-  ctx.command("sus.reload").action(() => {
-    server.prompts?.reload(ctx, config.prompt.prompt_directory);
-  });
+  if (config.prompt.pro_prompt)
+    ctx.command("sus.reload").action(() => {
+      server.prompts?.reload(ctx, config.prompt.prompt_directory);
+    });
 }

@@ -34,9 +34,6 @@ export class Prompts {
   } = {};
   liquid: Liquid;
   reload(ctx: Context, directory: string) {
-    this.constructor.call(this, ctx, directory);
-  }
-  constructor(ctx: Context, directory: string) {
     const liquid = new Liquid();
     const init_file_path = path.join(directory, "init.js");
     if (fs.existsSync(init_file_path)) {
@@ -77,6 +74,9 @@ export class Prompts {
     });
     this.liquid = liquid;
   }
+  constructor(ctx: Context, directory: string) {
+    this.reload(ctx, directory);
+  }
   get names(): string[] {
     return Object.keys(this.prompts_map);
   }
@@ -92,10 +92,12 @@ export class Prompts {
     let postprocessing;
     if (temp.postprocessing) {
       postprocessing = (message: Message) => {
-        const content = this.liquid.render(temp.postprocessing, {
+        const content = this.liquid.renderSync(temp.postprocessing, {
           message: message,
           ...scope,
         });
+        console.log(content);
+
         return { role: message.role, content };
       };
     } else {
