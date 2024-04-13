@@ -1,8 +1,19 @@
 import fs from "node:fs";
-import { Liquid, Template } from "liquidjs";
+import {
+  Context as LContext,
+  Emitter,
+  Hash,
+  Liquid,
+  Tag,
+  TagToken,
+  Template,
+  TopLevelToken,
+  Value,
+} from "liquidjs";
 import { Context, Session } from "koishi";
 import path from "node:path";
 import YAML from "yaml";
+import { logger } from ".";
 export interface ChatRequest {
   model: string;
   messages: Message[];
@@ -35,6 +46,7 @@ export class Prompts {
   liquid: Liquid;
   reload(ctx: Context, directory: string) {
     const liquid = new Liquid();
+    register_first(liquid);
     const init_file_path = path.join(directory, "init.js");
     if (fs.existsSync(init_file_path)) {
       liquid.plugin((Liquid) => {
@@ -80,25 +92,26 @@ export class Prompts {
   get names(): string[] {
     return Object.keys(this.prompts_map);
   }
-  get(name: string, scope: { [key: string]: any }): PromptsReal {
+  get(name: string, session: Session): PromptsReal {
+    register(session);
     if (!this.prompts_map[name]) {
       throw "prompt not found";
     }
     const temp = this.prompts_map[name];
     const messages: Message[] = temp.prompts.map((message) => {
-      const content = this.liquid.renderSync(message.content, scope);
+      const content = this.liquid.renderSync(message.content, {
+        session: JSON.parse(JSON.stringify(session)),
+      });
       return { role: message.role, content };
     });
-    let postprocessing;
+    let postprocessing: (message: Message) => Message;
     if (temp.postprocessing) {
       postprocessing = (message: Message) => {
-        const content = this.liquid.renderSync(temp.postprocessing, {
+        const content: string = this.liquid.renderSync(temp.postprocessing, {
           message: message,
-          ...scope,
+          session: JSON.parse(JSON.stringify(session)),
         });
-        console.log(content);
-
-        return { role: message.role, content };
+        return { role: message.role, content: content.trim() };
       };
     } else {
       postprocessing = (message: Message) => message;
@@ -116,6 +129,7 @@ export class ChatServer {
   api: { url: string; key: string };
   #recollect: { [cid: string]: { [prompt_name: string]: Message[] } };
   max_length: number;
+  persistence: boolean;
   get liquid() {
     return this.#liquid ?? this.prompts.liquid;
   }
@@ -125,6 +139,9 @@ export class ChatServer {
   set recollect(value) {
     this.#recollect = value;
     this.#limit_length();
+  }
+  get_recollect(session: Session, prompt_name: string) {
+    return this.recollect[session.channelId]?.[prompt_name] ?? [];
   }
   #limit_length() {
     for (const cid in this.#recollect) {
@@ -150,6 +167,46 @@ export class ChatServer {
       this.#recollect[cid][prompt_name]
     );
     this.#limit_length();
+    if (this.persistence) {
+      const dir = `./sus-recollect/${encodeURIComponent(cid)}`;
+      const file = `${encodeURIComponent(prompt_name)}.json`;
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+      } catch {}
+      fs.writeFileSync(
+        `${dir}/${file}`,
+        JSON.stringify(this.#recollect[cid][prompt_name]),
+        {
+          encoding: "utf-8",
+        }
+      );
+    }
+  }
+  load_recollect() {
+    const dir = `./sus-recollect`;
+    let items;
+    try {
+      items = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      logger.info("no recollect data");
+    }
+    const subdirectories = items.filter((item) => item.isDirectory());
+    for (const subdirectory of subdirectories) {
+      const cid = decodeURIComponent(subdirectory.name);
+      const files = fs
+        .readdirSync(`${dir}/${subdirectory.name}`)
+        .filter((file) => file.toLowerCase().endsWith(".json"));
+      for (const file of files) {
+        const prompt_name = decodeURIComponent(file.slice(0, -5));
+        const content = fs.readFileSync(
+          `${dir}/${subdirectory.name}/${file}`,
+          "utf-8"
+        );
+        this.update_recollect(cid, prompt_name, (_messages) => {
+          return JSON.parse(content) as Message[];
+        });
+      }
+    }
   }
   constructor(
     apiurl: string,
@@ -167,23 +224,20 @@ export class ChatServer {
     }
     this.api = { url: apiurl, key: apikey };
   }
-  async chat(
-    message: Message,
+  async evaluate(session: Session, content: string): Promise<string> {
+    register(session);
+    return (
+      (await this.liquid.parseAndRender(content, {
+        session: JSON.parse(JSON.stringify(session)),
+      })) ?? content
+    );
+  }
+  async get_prompt(
     prompt_name: string,
-    ctx: Context,
     session: Session
-  ): Promise<Message> {
-    prompt_name = prompt_name ?? "#";
-    if (typeof this.recollect[session.cid] === "undefined") {
-      this.recollect[session.cid] = {};
-    }
-    if (typeof this.recollect[session.cid][prompt_name] === "undefined") {
-      this.recollect[session.cid][prompt_name] = [];
-    }
-    const recall = this.recollect[session.cid][prompt_name];
-    let prompt_real: PromptsReal;
+  ): Promise<PromptsReal> {
     if (typeof this.prompts === "undefined") {
-      prompt_real = {
+      return {
         prompts: [
           {
             role: "system",
@@ -195,10 +249,27 @@ export class ChatServer {
         postprocessing: (message) => message,
       };
     } else {
-      prompt_real = this.prompts.get(prompt_name, {
-        session: JSON.parse(JSON.stringify(session)),
-      });
+      return this.prompts.get(prompt_name, session);
     }
+  }
+  async chat(
+    message: Message,
+    prompt_name: string,
+    ctx: Context,
+    session: Session
+  ): Promise<Message | undefined> {
+    prompt_name = prompt_name ?? "#";
+    if (typeof this.recollect[session.cid] === "undefined") {
+      this.recollect[session.cid] = {};
+    }
+    if (typeof this.recollect[session.cid][prompt_name] === "undefined") {
+      this.recollect[session.cid][prompt_name] = [];
+    }
+    const recall = this.recollect[session.cid][prompt_name];
+    const prompt_real: PromptsReal = await this.get_prompt(
+      prompt_name,
+      session
+    );
     const my_message = prompt_real.postprocessing(message);
     const req: ChatRequest = {
       model: "gpt-3.5-turbo",
@@ -212,12 +283,35 @@ export class ChatServer {
         Authorization: `Bearer ${this.api.key}`,
       },
     });
-    const result = prompt_real.postprocessing(res.choices[0].message);
+    const result_p = prompt_real.postprocessing(res.choices[0].message);
+    const result = result_p.content.trim() == "" ? undefined : result_p;
     this.update_recollect(session.cid, prompt_name, (messages) => {
       messages.push(my_message);
-      messages.push(result);
+      messages.push(result ?? result_p);
       return messages;
     });
     return result;
   }
+}
+
+function register(session: Session) {
+  Current.session = session;
+}
+function register_first(engine: Liquid) {
+  engine.registerTag("send", Send);
+}
+class Send extends Tag {
+  private value: Value;
+  constructor(token: TagToken, remainTokens: TopLevelToken[], liquid: Liquid) {
+    super(token, remainTokens, liquid);
+    this.value = new Value(token.args, liquid);
+  }
+  *render(ctx: LContext, _emitter: Emitter) {
+    const str: string = yield this.value.value(ctx);
+    Current.session.send(str);
+  }
+}
+
+class Current {
+  static session: Session;
 }

@@ -1,60 +1,17 @@
-import { Context, Logger, Schema } from "koishi";
+import { Context, Logger } from "koishi";
 import { ChatServer, Message, Prompts } from "./chat";
-import { DefaultApi } from "./defaultapi";
+import YAML from "yaml";
+import { Config } from "./config";
+
 export const name = "sus-chat";
+export { Config } from "./config";
 
-export interface Config {
-  api: string;
-  api_key: string;
-  max_length: number;
-  prompt: {
-    pro_prompt: boolean;
-    prompt_str?: string;
-    prompt_directory?: string;
-    default_prompt?: string;
-  };
-}
-
-export const Config: Schema<Config> = Schema.object({
-  api: Schema.string().default(DefaultApi.url).description("API"),
-  api_key: Schema.string().default(DefaultApi.key).description("KEY"),
-  max_length: Schema.number()
-    .role("slider")
-    .min(3)
-    .max(50)
-    .default(10)
-    .step(1)
-    .description("记忆长度上限"),
-  prompt: Schema.intersect([
-    Schema.object({
-      pro_prompt: Schema.boolean().default(false).description("使用专业提示词"),
-    }),
-    Schema.union([
-      Schema.object({
-        pro_prompt: Schema.const(false),
-        prompt_str: Schema.string()
-          .default(
-            "你是个有用的助理，当前与你对话的用户的昵称为:{{ session.user.name }}"
-          )
-          .description("提示词"),
-      }),
-      Schema.object({
-        pro_prompt: Schema.const(true).required(),
-        prompt_directory: Schema.path({
-          filters: ["directory"],
-        })
-          .default("./sus-chat")
-          .description("提示词文件所在目录"),
-        default_prompt: Schema.string()
-          .default("default")
-          .description("默认提示词"),
-      }),
-    ]),
-  ]),
-});
-
-const logger = new Logger("sus-chat");
+export const logger = new Logger("sus-chat");
 export function apply(ctx: Context, config: Config) {
+  const collected: string[] = [];
+  const current_prompt = new CurrentPropmptName(
+    config.prompt.default_prompt ?? ""
+  );
   const server = new ChatServer(
     config.api,
     config.api_key,
@@ -63,40 +20,112 @@ export function apply(ctx: Context, config: Config) {
       ? new Prompts(ctx, config.prompt.prompt_directory)
       : config.prompt.prompt_str
   );
-  ctx.command("sus <content:text>", "可疑").action(async (s, content) => {
-    const node: Message = { role: "user", content };
+  server.persistence = config.functionality.persistence;
+  if (config.functionality.persistence) server.load_recollect();
+  ctx.command("sus <content:text>", "与Ai聊天").action(async (s, content) => {
+    const node: Message = {
+      role: "user",
+      content: [...collected, content].join("\n"),
+    };
     const result = await server.chat(
       node,
-      config.prompt.default_prompt,
+      current_prompt.get(s.session.channelId),
       ctx,
       s.session
     );
-    return result.content;
+    return result?.content;
   });
-  if (config.prompt.pro_prompt)
-    ctx.command("sus.prom [name:string]").action(async (s, name) => {
-      if (!config.prompt?.pro_prompt) {
-        return server.liquid.render(server.prompt_str, {
-          session: JSON.parse(JSON.stringify(s.session)),
-        });
-      }
-      if (!name) {
+  if (config.prompt.pro_prompt) {
+    ctx
+      .command("sus.prom", "提示词相关指令,直接输入可查看提示词列表")
+      .action(async (_s) => {
         return server.prompts.names.join("\n");
-      }
-      return JSON.stringify(
-        server.prompts.get(name, {
-          session: JSON.parse(JSON.stringify(s.session)),
-        })
-      );
+      });
+    ctx
+      .command("sus.prom.set <name:string>", "设置提示词")
+      .action(async (s, name) => {
+        current_prompt.set(s.session.channelId, name);
+        return "设置成功";
+      });
+    ctx
+      .command("sus.prom.exec <name:string>", "求值提示词")
+      .action(async (s, name) => {
+        const result = server.prompts.get(name, s.session);
+        return YAML.stringify(result.prompts);
+      });
+    ctx.command("sus.prom.current", "查看当前提示词").action((s) => {
+      return current_prompt.get(s.session.channelId);
     });
-  ctx.command("sus.eval <content:text>").action(async (s, content) => {
-    const result = await server.liquid.parseAndRender(content, {
-      session: JSON.parse(JSON.stringify(s.session)),
-    });
-    return result;
-  });
-  if (config.prompt.pro_prompt)
-    ctx.command("sus.reload").action(() => {
+    ctx.command("sus.reload", "重新载入所有提示词").action(() => {
       server.prompts?.reload(ctx, config.prompt.prompt_directory);
+      return "重载成功";
     });
+  }
+  ctx
+    .command("sus.eval <content:text>", "求值 liquid")
+    .action(async (s, content) => {
+      const result = await server.evaluate(s.session, content);
+      return result;
+    });
+  ctx.command("sus.history", "查看聊天记录").action((s) => {
+    return YAML.stringify(
+      server.get_recollect(s.session, current_prompt.get(s.session.channelId))
+    );
+  });
+  ctx.command("sus.history.clean", "清空聊天记录").action((s) => {
+    server.update_recollect(
+      s.session.channelId,
+      current_prompt.get(s.session.channelId),
+      (_) => []
+    );
+  });
+
+  if (config.functionality.random_reply.enable) {
+    ctx.middleware(async (session, next) => {
+      if (Math.random() < config.functionality.random_reply.probability) {
+        const message: Message = {
+          role: "user",
+          content: [...collected, session.content].join("\n"),
+        };
+        const result = await server.chat(
+          message,
+          current_prompt.get(session.channelId),
+          ctx,
+          session
+        );
+        return result?.content ?? next();
+      }
+      return next();
+    });
+  }
+  if (config.functionality.extension_count > 1) {
+    ctx.middleware(async (session, next) => {
+      const postprocessing = (
+        await server.get_prompt(current_prompt.get(session.channelId), session)
+      ).postprocessing;
+      const message: Message = {
+        role: "user",
+        content: session.content,
+      };
+      const result = postprocessing(message);
+      collected.push(result.content);
+      while (collected.length > config.functionality.extension_count) {
+        collected.shift();
+      }
+      return next();
+    });
+  }
+}
+class CurrentPropmptName {
+  current_name: { [key: string]: string } = {};
+  default_prompt: string;
+  constructor(default_prompt: string) {
+    this.default_prompt = default_prompt;
+  }
+  get(id: string) {
+    return this.current_name[id] ?? this.default_prompt;
+  }
+  set(id: string, name: string) {
+    this.current_name[id] = name;
+  }
 }
