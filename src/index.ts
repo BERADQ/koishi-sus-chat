@@ -6,6 +6,12 @@ import { Config } from "./config";
 export const name = "sus-chat";
 export { Config } from "./config";
 
+export const usage = `
+关键词功能在配置项的基础上，还会包含提示词文件中的。
+
+如果意外触发，请检查关键词文件。
+`
+
 export const logger = new Logger("sus-chat");
 export function apply(ctx: Context, config: Config) {
   const collected: string[] = [];
@@ -21,7 +27,7 @@ export function apply(ctx: Context, config: Config) {
       : config.prompt.prompt_str
   );
   server.persistence = config.functionality.persistence;
-  if (config.functionality.persistence) server.load_recollect();
+  if (config.functionality.persistence) server.load_recollect(ctx);
   ctx.command("sus <content:text>", "与Ai聊天").action(async (s, content) => {
     const node: Message = {
       role: "user",
@@ -80,24 +86,38 @@ export function apply(ctx: Context, config: Config) {
     );
   });
 
-  if (config.functionality.random_reply.enable) {
-    ctx.middleware(async (session, next) => {
-      if (Math.random() < config.functionality.random_reply.probability) {
-        const message: Message = {
-          role: "user",
-          content: [...collected, session.content].join("\n"),
-        };
-        const result = await server.chat(
-          message,
-          current_prompt.get(session.channelId),
-          ctx,
-          session
-        );
-        return result?.content ?? next();
+  // 随机回复与关键词触发
+  ctx.middleware(async (session, next) => {
+    const content = session.content;
+    let for_key = false;
+    for (const key of config.functionality.tiggering.keywords
+      .keywords_for_triggering) {
+      if (content.includes(key)) {
+        for_key = true;
+        break;
       }
+    }
+    const for_random =
+      config.functionality.tiggering.random_reply.enable &&
+      Math.random() < config.functionality.tiggering.random_reply.probability;
+    if (!(for_key || for_random)) return next();
+    if (
+      config.functionality.tiggering.random_reply.effect_for_keywords &&
+      !(for_key || for_random)
+    )
       return next();
-    });
-  }
+    const message: Message = {
+      role: "user",
+      content: [...collected, session.content].join("\n"),
+    };
+    const result = await server.chat(
+      message,
+      current_prompt.get(session.channelId),
+      ctx,
+      session
+    );
+    return result?.content ?? next();
+  });
   if (config.functionality.extension_count > 1) {
     ctx.middleware(async (session, next) => {
       const postprocessing = (

@@ -182,15 +182,16 @@ export class ChatServer {
       );
     }
   }
-  load_recollect() {
-    const dir = `./sus-recollect`;
-    let items;
+  load_recollect(ctx: Context) {
+    const dir = path.join(ctx.baseDir, "data", "sus-recollect");
+    let items: fs.Dirent[];
     try {
       items = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
       logger.info("no recollect data");
+      return;
     }
-    const subdirectories = items.filter((item) => item.isDirectory());
+    const subdirectories = items?.filter((item) => item.isDirectory());
     for (const subdirectory of subdirectories) {
       const cid = decodeURIComponent(subdirectory.name);
       const files = fs
