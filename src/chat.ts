@@ -266,8 +266,9 @@ export class ChatServer {
     session: Session
   ): Promise<Message | undefined> {
     const recall = this.get_recollect(session, prompt_name);
-    console.log(recall);
-
+    if (message.content.trim() == "") {
+      return undefined;
+    }
     const prompt_real: PromptsReal = await this.get_prompt(
       prompt_name,
       session
