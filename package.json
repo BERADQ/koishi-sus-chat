@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-sus-chat",
-  "description": "可疑的插件",
-  "version": "0.0.2",
+  "description": "可疑的插件，用于ai聊天",
+  "version": "0.9.3",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [

@@ -14,6 +14,7 @@ export interface Config {
   functionality: {
     persistence: boolean;
     extension_count: number;
+    logging: boolean;
     tiggering: {
       random_reply: {
         enable: boolean;
@@ -69,11 +70,12 @@ export const Config: Schema<Config> = Schema.object({
       .default(true)
       .description("是否将消息记录持久化"),
     extension_count: Schema.number()
-      .default(1)
+      .default(0)
       .max(10)
       .step(1)
-      .min(1)
+      .min(0)
       .description("追溯上下文条目数量"),
+    logging:Schema.boolean().default(false).description("是否于每句对话输出日志"),
     tiggering: Schema.object({
       random_reply: Schema.intersect([
         Schema.object({

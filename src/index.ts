@@ -1,5 +1,5 @@
-import { Context, Logger } from "koishi";
-import { ChatServer, Message, Prompts } from "./chat";
+import { Context, Logger, Session } from "koishi";
+import { ChatServer, Message, Prompts, PromptsReal } from "./chat";
 import YAML from "yaml";
 import { Config } from "./config";
 
@@ -10,11 +10,33 @@ export const usage = `
 关键词功能在配置项的基础上，还会包含提示词文件中的。
 
 如果意外触发，请检查关键词文件。
-`
+`;
+
+class Collected {
+  collected: { [cid: string]: string[] } = {};
+  max_length: number;
+  constructor(max_length: number) {
+    this.max_length = max_length;
+  }
+  get(cid: string) {
+    return this.collected[cid] ?? [];
+  }
+  add(cid: string, content: string) {
+    this.collected[cid] = [...(this.collected[cid] ?? []), content];
+    while (this.collected[cid].length > this.max_length) {
+      this.collected[cid].shift();
+    }
+  }
+  clean(cid: string) {
+    delete this.collected[cid];
+  }
+}
 
 export const logger = new Logger("sus-chat");
 export function apply(ctx: Context, config: Config) {
-  const collected: string[] = [];
+  const collected: Collected = new Collected(
+    config.functionality.extension_count
+  );
   const current_prompt = new CurrentPropmptName(
     config.prompt.default_prompt ?? ""
   );
@@ -28,18 +50,38 @@ export function apply(ctx: Context, config: Config) {
   );
   server.persistence = config.functionality.persistence;
   if (config.functionality.persistence) server.load_recollect(ctx);
-  ctx.command("sus <content:text>", "与Ai聊天").action(async (s, content) => {
-    const node: Message = {
+  async function chat(
+    session: Session,
+    content: string
+  ): Promise<string | null> {
+    const prompt_real: PromptsReal = await server.get_prompt(
+      current_prompt.get(session.cid),
+      session
+    );
+    const my_content = prompt_real.postprocessing({
       role: "user",
-      content: [...collected, content].join("\n"),
+      content: content,
+    });
+    const message: Message = {
+      role: "user",
+      content: [...collected.get(session.cid), my_content.content].join(
+        "\n"
+      ),
     };
+    if (config.functionality.logging) {
+      logger.info(`${session.cid}:`, JSON.stringify(message.content));
+    }
+    collected.clean(session.cid);
     const result = await server.chat(
-      node,
-      current_prompt.get(s.session.channelId),
+      message,
+      current_prompt.get(session.cid),
       ctx,
-      s.session
+      session
     );
     return result?.content;
+  }
+  ctx.command("sus <content:text>", "与Ai聊天").action(async (s, content) => {
+    return chat(s.session, content);
   });
   if (config.prompt.pro_prompt) {
     ctx
@@ -50,7 +92,7 @@ export function apply(ctx: Context, config: Config) {
     ctx
       .command("sus.prom.set <name:string>", "设置提示词")
       .action(async (s, name) => {
-        current_prompt.set(s.session.channelId, name);
+        current_prompt.set(s.session.cid, name);
         return "设置成功";
       });
     ctx
@@ -60,7 +102,7 @@ export function apply(ctx: Context, config: Config) {
         return YAML.stringify(result.prompts);
       });
     ctx.command("sus.prom.current", "查看当前提示词").action((s) => {
-      return current_prompt.get(s.session.channelId);
+      return current_prompt.get(s.session.cid);
     });
     ctx.command("sus.reload", "重新载入所有提示词").action(() => {
       server.prompts?.reload(ctx, config.prompt.prompt_directory);
@@ -75,13 +117,14 @@ export function apply(ctx: Context, config: Config) {
     });
   ctx.command("sus.history", "查看聊天记录").action((s) => {
     return YAML.stringify(
-      server.get_recollect(s.session, current_prompt.get(s.session.channelId))
+      server.get_recollect(s.session, current_prompt.get(s.session.cid))
     );
   });
   ctx.command("sus.history.clean", "清空聊天记录").action((s) => {
     server.update_recollect(
-      s.session.channelId,
-      current_prompt.get(s.session.channelId),
+      ctx,
+      s.session,
+      current_prompt.get(s.session.cid),
       (_) => []
     );
   });
@@ -103,35 +146,23 @@ export function apply(ctx: Context, config: Config) {
     if (!(for_key || for_random)) return next();
     if (
       config.functionality.tiggering.random_reply.effect_for_keywords &&
-      !(for_key || for_random)
+      !(for_key && for_random)
     )
       return next();
-    const message: Message = {
-      role: "user",
-      content: [...collected, session.content].join("\n"),
-    };
-    const result = await server.chat(
-      message,
-      current_prompt.get(session.channelId),
-      ctx,
-      session
-    );
-    return result?.content ?? next();
+    const result = await chat(session, content);
+    return result ?? next();
   });
-  if (config.functionality.extension_count > 1) {
+  if (config.functionality.extension_count >= 1) {
     ctx.middleware(async (session, next) => {
       const postprocessing = (
-        await server.get_prompt(current_prompt.get(session.channelId), session)
+        await server.get_prompt(current_prompt.get(session.cid), session)
       ).postprocessing;
       const message: Message = {
         role: "user",
         content: session.content,
       };
       const result = postprocessing(message);
-      collected.push(result.content);
-      while (collected.length > config.functionality.extension_count) {
-        collected.shift();
-      }
+      collected.add(session.cid, result.content);
       return next();
     });
   }

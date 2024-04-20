@@ -141,7 +141,7 @@ export class ChatServer {
     this.#limit_length();
   }
   get_recollect(session: Session, prompt_name: string) {
-    return this.recollect[session.channelId]?.[prompt_name] ?? [];
+    return this.recollect[session.cid]?.[prompt_name] ?? [];
   }
   #limit_length() {
     for (const cid in this.#recollect) {
@@ -153,29 +153,35 @@ export class ChatServer {
     }
   }
   update_recollect(
-    cid: string,
+    ctx: Context,
+    session: Session | { cid: string },
     prompt_name: string,
     callback: (messages: Message[]) => Message[]
   ) {
-    if (!this.#recollect[cid]) {
-      this.#recollect[cid] = {};
+    if (typeof this.#recollect[session.cid] == "undefined") {
+      this.#recollect[session.cid] = {};
     }
-    if (!this.#recollect[cid][prompt_name]) {
-      this.#recollect[cid][prompt_name] = [];
+    if (typeof this.#recollect[session.cid][prompt_name] == "undefined") {
+      this.#recollect[session.cid][prompt_name] = [];
     }
-    this.#recollect[cid][prompt_name] = callback(
-      this.#recollect[cid][prompt_name]
+    this.#recollect[session.cid][prompt_name] = callback(
+      this.#recollect[session.cid][prompt_name]
     );
     this.#limit_length();
     if (this.persistence) {
-      const dir = `./sus-recollect/${encodeURIComponent(cid)}`;
+      const dir = path.join(
+        ctx.baseDir,
+        "data",
+        "sus-recollect",
+        encodeURIComponent(session.cid)
+      );
       const file = `${encodeURIComponent(prompt_name)}.json`;
       try {
         fs.mkdirSync(dir, { recursive: true });
       } catch {}
       fs.writeFileSync(
         `${dir}/${file}`,
-        JSON.stringify(this.#recollect[cid][prompt_name]),
+        JSON.stringify(this.#recollect[session.cid][prompt_name]),
         {
           encoding: "utf-8",
         }
@@ -203,7 +209,7 @@ export class ChatServer {
           `${dir}/${subdirectory.name}/${file}`,
           "utf-8"
         );
-        this.update_recollect(cid, prompt_name, (_messages) => {
+        this.update_recollect(ctx, { cid }, prompt_name, (_messages) => {
           return JSON.parse(content) as Message[];
         });
       }
@@ -259,22 +265,16 @@ export class ChatServer {
     ctx: Context,
     session: Session
   ): Promise<Message | undefined> {
-    prompt_name = prompt_name ?? "#";
-    if (typeof this.recollect[session.cid] === "undefined") {
-      this.recollect[session.cid] = {};
-    }
-    if (typeof this.recollect[session.cid][prompt_name] === "undefined") {
-      this.recollect[session.cid][prompt_name] = [];
-    }
-    const recall = this.recollect[session.cid][prompt_name];
+    const recall = this.get_recollect(session, prompt_name);
+    console.log(recall);
+
     const prompt_real: PromptsReal = await this.get_prompt(
       prompt_name,
       session
     );
-    const my_message = prompt_real.postprocessing(message);
     const req: ChatRequest = {
       model: "gpt-3.5-turbo",
-      messages: [...recall, ...prompt_real.prompts, my_message],
+      messages: [...recall, ...prompt_real.prompts, message],
       stream: false,
     };
     const res = await ctx.http.post(this.api.url, req, {
@@ -286,8 +286,8 @@ export class ChatServer {
     });
     const result_p = prompt_real.postprocessing(res.choices[0].message);
     const result = result_p.content.trim() == "" ? undefined : result_p;
-    this.update_recollect(session.cid, prompt_name, (messages) => {
-      messages.push(my_message);
+    this.update_recollect(ctx, session, prompt_name, (messages) => {
+      messages.push(message);
       messages.push(result ?? result_p);
       return messages;
     });
