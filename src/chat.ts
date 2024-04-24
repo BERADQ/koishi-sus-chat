@@ -2,7 +2,6 @@ import fs from "node:fs";
 import {
   Context as LContext,
   Emitter,
-  Hash,
   Liquid,
   Tag,
   TagToken,
@@ -49,13 +48,14 @@ export class Prompts {
     register_first(liquid);
     const init_file_path = path.join(directory, "init.js");
     if (fs.existsSync(init_file_path)) {
-      liquid.plugin((Liquid) => {
+      logger.info("load init.js");
+      liquid.plugin(function(Liquid) {
         let fun: (
           this: Liquid,
           arg0: Context,
-          arg1: typeof Liquid
-        ) => void = require(init_file_path);
-        fun.bind(this)(ctx, Liquid);
+          arg1: typeof Liquid,
+        ) => void = require(path.resolve(path.join(init_file_path)));
+        fun.call(this, ctx, Liquid);
       });
     }
     let files = fs
@@ -64,7 +64,7 @@ export class Prompts {
     let prompts: PromptsFile[] = files.map((file) => {
       const content_string = fs.readFileSync(
         path.join(directory, file),
-        "utf-8"
+        "utf-8",
       );
       const content: PromptsFile = YAML.parse(content_string);
       return content;
@@ -73,7 +73,7 @@ export class Prompts {
       const prompts: { role: Role; content: Template[] }[] = prompt.prompts.map(
         (prompt) => {
           return { role: prompt.role, content: liquid.parse(prompt.content) };
-        }
+        },
       );
       const postprocessing = prompt.postprocessing
         ? liquid.parse(prompt.postprocessing)
@@ -156,7 +156,7 @@ export class ChatServer {
     ctx: Context,
     session: Session | { cid: string },
     prompt_name: string,
-    callback: (messages: Message[]) => Message[]
+    callback: (messages: Message[]) => Message[],
   ) {
     if (typeof this.#recollect[session.cid] == "undefined") {
       this.#recollect[session.cid] = {};
@@ -165,7 +165,7 @@ export class ChatServer {
       this.#recollect[session.cid][prompt_name] = [];
     }
     this.#recollect[session.cid][prompt_name] = callback(
-      this.#recollect[session.cid][prompt_name]
+      this.#recollect[session.cid][prompt_name],
     );
     this.#limit_length();
     if (this.persistence) {
@@ -173,18 +173,18 @@ export class ChatServer {
         ctx.baseDir,
         "data",
         "sus-recollect",
-        encodeURIComponent(session.cid)
+        encodeURIComponent(session.cid),
       );
       const file = `${encodeURIComponent(prompt_name)}.json`;
       try {
         fs.mkdirSync(dir, { recursive: true });
-      } catch {}
+      } catch { }
       fs.writeFileSync(
         `${dir}/${file}`,
         JSON.stringify(this.#recollect[session.cid][prompt_name]),
         {
           encoding: "utf-8",
-        }
+        },
       );
     }
   }
@@ -207,7 +207,7 @@ export class ChatServer {
         const prompt_name = decodeURIComponent(file.slice(0, -5));
         const content = fs.readFileSync(
           `${dir}/${subdirectory.name}/${file}`,
-          "utf-8"
+          "utf-8",
         );
         this.update_recollect(ctx, { cid }, prompt_name, (_messages) => {
           return JSON.parse(content) as Message[];
@@ -219,7 +219,7 @@ export class ChatServer {
     apiurl: string,
     apikey: string,
     config: ChatConfig,
-    prompts: Prompts | string
+    prompts: Prompts | string,
   ) {
     this.#recollect = {};
     this.max_length = config.max_length;
@@ -241,7 +241,7 @@ export class ChatServer {
   }
   async get_prompt(
     prompt_name: string,
-    session: Session
+    session: Session,
   ): Promise<PromptsReal> {
     if (typeof this.prompts === "undefined") {
       return {
@@ -263,7 +263,7 @@ export class ChatServer {
     message: Message,
     prompt_name: string,
     ctx: Context,
-    session: Session
+    session: Session,
   ): Promise<Message | undefined> {
     const recall = this.get_recollect(session, prompt_name);
     if (message.content.trim() == "") {
@@ -271,7 +271,7 @@ export class ChatServer {
     }
     const prompt_real: PromptsReal = await this.get_prompt(
       prompt_name,
-      session
+      session,
     );
     const req: ChatRequest = {
       model: "gpt-3.5-turbo",
@@ -289,7 +289,7 @@ export class ChatServer {
     const result = result_p.content.trim() == "" ? undefined : result_p;
     this.update_recollect(ctx, session, prompt_name, (messages) => {
       messages.push(message);
-      messages.push(result ?? result_p);
+      messages.push(result ?? res.choices[0].message);
       return messages;
     });
     return result;

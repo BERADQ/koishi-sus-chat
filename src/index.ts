@@ -35,10 +35,10 @@ class Collected {
 export const logger = new Logger("sus-chat");
 export function apply(ctx: Context, config: Config) {
   const collected: Collected = new Collected(
-    config.functionality.extension_count
+    config.functionality.extension_count,
   );
   const current_prompt = new CurrentPropmptName(
-    config.prompt.default_prompt ?? ""
+    config.prompt.default_prompt ?? "",
   );
   const server = new ChatServer(
     config.api,
@@ -46,17 +46,17 @@ export function apply(ctx: Context, config: Config) {
     { max_length: config.max_length },
     config.prompt.pro_prompt
       ? new Prompts(ctx, config.prompt.prompt_directory)
-      : config.prompt.prompt_str
+      : config.prompt.prompt_str,
   );
   server.persistence = config.functionality.persistence;
   if (config.functionality.persistence) server.load_recollect(ctx);
   async function chat(
     session: Session,
-    content: string
+    content: string,
   ): Promise<string | null> {
     const prompt_real: PromptsReal = await server.get_prompt(
       current_prompt.get(session.cid),
-      session
+      session,
     );
     const my_content = prompt_real.postprocessing({
       role: "user",
@@ -64,9 +64,7 @@ export function apply(ctx: Context, config: Config) {
     });
     const message: Message = {
       role: "user",
-      content: [...collected.get(session.cid), my_content.content].join(
-        "\n"
-      ),
+      content: [...collected.get(session.cid), my_content.content].join("\n"),
     };
     if (config.functionality.logging) {
       logger.info(`${session.cid}:`, JSON.stringify(message.content));
@@ -76,7 +74,7 @@ export function apply(ctx: Context, config: Config) {
       message,
       current_prompt.get(session.cid),
       ctx,
-      session
+      session,
     );
     return result?.content;
   }
@@ -92,6 +90,8 @@ export function apply(ctx: Context, config: Config) {
     ctx
       .command("sus.prom.set <name:string>", "设置提示词")
       .action(async (s, name) => {
+        if (!Object.keys(server.prompts.prompts_map).includes(name))
+          return "提示词不存在";
         current_prompt.set(s.session.cid, name);
         return "设置成功";
       });
@@ -117,7 +117,7 @@ export function apply(ctx: Context, config: Config) {
     });
   ctx.command("sus.history", "查看聊天记录").action((s) => {
     return YAML.stringify(
-      server.get_recollect(s.session, current_prompt.get(s.session.cid))
+      server.get_recollect(s.session, current_prompt.get(s.session.cid)),
     );
   });
   ctx.command("sus.history.clean", "清空聊天记录").action((s) => {
@@ -125,8 +125,9 @@ export function apply(ctx: Context, config: Config) {
       ctx,
       s.session,
       current_prompt.get(s.session.cid),
-      (_) => []
+      (_) => [],
     );
+    return "清空成功";
   });
 
   // 随机回复与关键词触发
