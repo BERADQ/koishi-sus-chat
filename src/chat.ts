@@ -274,7 +274,7 @@ export class ChatServer {
       session,
     );
     const req: ChatRequest = {
-      model: "gpt-3.5-turbo",
+      model: "gpt-3.5-turbo-instruct",
       messages: [...recall, ...prompt_real.prompts, message],
       stream: false,
     };

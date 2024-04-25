@@ -7,9 +7,9 @@ export const name = "sus-chat";
 export { Config } from "./config";
 
 export const usage = `
-关键词功能在配置项的基础上，还会包含提示词文件中的。
+默认API由热心网友提供，如果想要感谢他：[**爱发电**]()
 
-如果意外触发，请检查关键词文件。
+如果意外触发，请检查关键词。
 `;
 
 class Collected {
