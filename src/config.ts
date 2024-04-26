@@ -4,6 +4,8 @@ import { DefaultApi } from "./defaultapi";
 export interface Config {
   api: string;
   api_key: string;
+  model: string;
+  temperature: number;
   max_length: number;
   prompt: {
     pro_prompt: boolean;
@@ -28,10 +30,32 @@ export interface Config {
     };
   };
 }
+const models = [
+  "gpt-4-turbo",
+  "gpt-4-turbo-2024-04-09",
+  "gpt-4-0125-preview",
+  "gpt-4-turbo-preview",
+  "gpt-4-1106-preview",
+  "gpt-4-vision-preview",
+  "gpt-4",
+  "gpt-4-0314",
+  "gpt-4-0613",
+  "gpt-4-32k",
+  "gpt-4-32k-0314",
+  "gpt-4-32k-0613",
+  "gpt-3.5-turbo",
+  "gpt-3.5-turbo-16k",
+  "gpt-3.5-turbo-0301",
+  "gpt-3.5-turbo-0613",
+  "gpt-3.5-turbo-1106",
+  "gpt-3.5-turbo-0125",
+  "gpt-3.5-turbo-16k-0613",
+];
 
 export const Config: Schema<Config> = Schema.object({
   api: Schema.string().default(DefaultApi.url).description("API"),
   api_key: Schema.string().default(DefaultApi.key).description("KEY"),
+  model: Schema.union(models).default("gpt-3.5-turbo").description("模型"),
   max_length: Schema.number()
     .role("slider")
     .min(3)
@@ -39,6 +63,13 @@ export const Config: Schema<Config> = Schema.object({
     .default(10)
     .step(1)
     .description("记忆长度上限"),
+  temperature: Schema.number()
+    .role("slider")
+    .min(0.001)
+    .max(0.999)
+    .step(0.001)
+    .default(0.5)
+    .description("默认温度(会受高阶提示词影响)"),
   prompt: Schema.intersect([
     Schema.object({
       pro_prompt: Schema.boolean().default(false).description("使用高阶提示词"),
@@ -48,7 +79,7 @@ export const Config: Schema<Config> = Schema.object({
         pro_prompt: Schema.const(false),
         prompt_str: Schema.string()
           .default(
-            "你是个有用的助理，当前与你对话的用户的昵称为:{{ session.user.name }}",
+            "你是个有用的助理，当前与你对话的用户的昵称为:{{ session.user.name }}"
           )
           .description("提示词内容"),
       }),

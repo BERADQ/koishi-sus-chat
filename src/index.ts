@@ -33,28 +33,26 @@ class Collected {
 export const logger = new Logger("sus-chat");
 export function apply(ctx: Context, config: Config) {
   const collected: Collected = new Collected(
-    config.functionality.extension_count,
+    config.functionality.extension_count
   );
   const current_prompt = new CurrentPropmptName(
-    config.prompt.default_prompt ?? "",
+    config.prompt.default_prompt ?? ""
   );
   const server = new ChatServer(
-    config.api,
-    config.api_key,
-    { max_length: config.max_length },
+    config,
     config.prompt.pro_prompt
-      ? new Prompts(ctx, config.prompt.prompt_directory)
-      : config.prompt.prompt_str,
+      ? new Prompts(ctx, config.prompt.prompt_directory, config)
+      : config.prompt.prompt_str
   );
   server.persistence = config.functionality.persistence;
   if (config.functionality.persistence) server.load_recollect(ctx);
   async function chat(
     session: Session,
-    content: string,
+    content: string
   ): Promise<string | null> {
     const prompt_real: PromptsReal = await server.get_prompt(
       current_prompt.get(session.cid),
-      session,
+      session
     );
     const my_content = prompt_real.postprocessing({
       role: "user",
@@ -72,7 +70,7 @@ export function apply(ctx: Context, config: Config) {
       message,
       current_prompt.get(session.cid),
       ctx,
-      session,
+      session
     );
     return result?.content;
   }
@@ -117,7 +115,7 @@ export function apply(ctx: Context, config: Config) {
     });
   ctx.command("sus.history", "查看聊天记录").action((s) => {
     return YAML.stringify(
-      server.get_recollect(s.session, current_prompt.get(s.session.cid)),
+      server.get_recollect(s.session, current_prompt.get(s.session.cid))
     );
   });
   ctx.command("sus.history.clean", "清空聊天记录").action((s) => {
@@ -125,7 +123,7 @@ export function apply(ctx: Context, config: Config) {
       ctx,
       s.session,
       current_prompt.get(s.session.cid),
-      (_) => [],
+      (_) => []
     );
     return "清空成功";
   });
@@ -134,8 +132,11 @@ export function apply(ctx: Context, config: Config) {
   ctx.middleware(async (session, next) => {
     const content = session.content;
     let for_key = false;
-    for (const key of config.functionality.tiggering.keywords
-      .keywords_for_triggering) {
+    const keywords = [
+      ...server.prompts?.get_keywords(current_prompt.get(session.cid)),
+      ...config.functionality.tiggering.keywords.keywords_for_triggering,
+    ];
+    for (const key of keywords) {
       if (content.includes(key)) {
         for_key = true;
         break;
