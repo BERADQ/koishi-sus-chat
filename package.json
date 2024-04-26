@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-sus-chat",
-  "description": "可疑的插件，用于ai聊天",
-  "version": "0.9.5",
+  "description": "超简单超棒的AI聊天, 启动!",
+  "version": "0.9.7",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -19,6 +19,10 @@
     "free",
     "sus"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BERADQ/koishi-sus-chat.git"
+  },
   "peerDependencies": {
     "koishi": "^4.17.3"
   },

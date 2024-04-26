@@ -7,9 +7,7 @@ export const name = "sus-chat";
 export { Config } from "./config";
 
 export const usage = `
-默认API由热心网友提供，如果想要感谢他：[**爱发电**]()
-
-如果意外触发，请检查关键词。
+# 使用方法可查看: [**文档**](https://beradq.github.io/sus-chat-doc)
 `;
 
 class Collected {
@@ -85,7 +83,9 @@ export function apply(ctx: Context, config: Config) {
     ctx
       .command("sus.prom", "提示词相关指令,直接输入可查看提示词列表")
       .action(async (_s) => {
-        return server.prompts.names.join("\n");
+        return server.prompts.names
+          .filter((v) => !v.startsWith("."))
+          .join("\n");
       });
     ctx
       .command("sus.prom.set <name:string>", "设置提示词")

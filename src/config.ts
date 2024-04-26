@@ -48,7 +48,7 @@ export const Config: Schema<Config> = Schema.object({
         pro_prompt: Schema.const(false),
         prompt_str: Schema.string()
           .default(
-            "你是个有用的助理，当前与你对话的用户的昵称为:{{ session.user.name }}"
+            "你是个有用的助理，当前与你对话的用户的昵称为:{{ session.user.name }}",
           )
           .description("提示词内容"),
       }),
@@ -57,7 +57,7 @@ export const Config: Schema<Config> = Schema.object({
         prompt_directory: Schema.path({
           filters: ["directory"],
         })
-          .default("./sus-chat")
+          .required()
           .description("提示词文件所在目录"),
         default_prompt: Schema.string()
           .default("default")
@@ -75,7 +75,9 @@ export const Config: Schema<Config> = Schema.object({
       .step(1)
       .min(0)
       .description("追溯上下文条目数量"),
-    logging:Schema.boolean().default(false).description("是否于每句对话输出日志"),
+    logging: Schema.boolean()
+      .default(false)
+      .description("是否于每句对话输出日志"),
     tiggering: Schema.object({
       random_reply: Schema.intersect([
         Schema.object({
