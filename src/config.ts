@@ -21,7 +21,6 @@ export interface Config {
       random_reply: {
         enable: boolean;
         probability?: number;
-        effect_for_keywords?: boolean;
       };
       keywords: {
         keywords_for_triggering: string[];
@@ -30,32 +29,11 @@ export interface Config {
     };
   };
 }
-const models = [
-  "gpt-4-turbo",
-  "gpt-4-turbo-2024-04-09",
-  "gpt-4-0125-preview",
-  "gpt-4-turbo-preview",
-  "gpt-4-1106-preview",
-  "gpt-4-vision-preview",
-  "gpt-4",
-  "gpt-4-0314",
-  "gpt-4-0613",
-  "gpt-4-32k",
-  "gpt-4-32k-0314",
-  "gpt-4-32k-0613",
-  "gpt-3.5-turbo",
-  "gpt-3.5-turbo-16k",
-  "gpt-3.5-turbo-0301",
-  "gpt-3.5-turbo-0613",
-  "gpt-3.5-turbo-1106",
-  "gpt-3.5-turbo-0125",
-  "gpt-3.5-turbo-16k-0613",
-];
 
 export const Config: Schema<Config> = Schema.object({
   api: Schema.string().default(DefaultApi.url).description("API"),
   api_key: Schema.string().default(DefaultApi.key).description("KEY"),
-  model: Schema.union(models).default("gpt-3.5-turbo").description("模型"),
+  model: Schema.string().default("gpt-3.5-turbo").description("模型"),
   max_length: Schema.number()
     .role("slider")
     .min(3)
@@ -129,9 +107,6 @@ export const Config: Schema<Config> = Schema.object({
               .step(0.05)
               .role("slider")
               .description("随机回复概率"),
-            effect_for_keywords: Schema.boolean()
-              .description("是否影响关键词匹配")
-              .default(false),
           }),
         ]),
       ]),

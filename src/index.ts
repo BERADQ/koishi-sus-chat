@@ -17,6 +17,7 @@ class Collected {
     this.max_length = max_length;
   }
   get(cid: string) {
+    this.collected[cid]?.shift();
     return this.collected[cid] ?? [];
   }
   add(cid: string, content: string) {
@@ -26,33 +27,34 @@ class Collected {
     }
   }
   clean(cid: string) {
-    delete this.collected[cid];
+    this.collected[cid] = [];
   }
 }
 
 export const logger = new Logger("sus-chat");
 export function apply(ctx: Context, config: Config) {
   const collected: Collected = new Collected(
-    config.functionality.extension_count
+    config.functionality.extension_count,
   );
   const current_prompt = new CurrentPropmptName(
-    config.prompt.default_prompt ?? ""
+    config.prompt.default_prompt ?? "",
   );
   const server = new ChatServer(
     config,
     config.prompt.pro_prompt
       ? new Prompts(ctx, config.prompt.prompt_directory, config)
-      : config.prompt.prompt_str
+      : config.prompt.prompt_str,
   );
   server.persistence = config.functionality.persistence;
   if (config.functionality.persistence) server.load_recollect(ctx);
   async function chat(
     session: Session,
-    content: string
+    content: string,
   ): Promise<string | null> {
     const prompt_real: PromptsReal = await server.get_prompt(
       current_prompt.get(session.cid),
-      session
+      ctx,
+      session,
     );
     const my_content = prompt_real.postprocessing({
       role: "user",
@@ -60,7 +62,7 @@ export function apply(ctx: Context, config: Config) {
     });
     const message: Message = {
       role: "user",
-      content: [...collected.get(session.cid), my_content.content].join("\n"),
+      content: [...collected.get(session.cid), my_content.content].join("\n\n"),
     };
     if (config.functionality.logging) {
       logger.info(`${session.cid}:`, JSON.stringify(message.content));
@@ -70,7 +72,7 @@ export function apply(ctx: Context, config: Config) {
       message,
       current_prompt.get(session.cid),
       ctx,
-      session
+      session,
     );
     return result?.content;
   }
@@ -96,7 +98,7 @@ export function apply(ctx: Context, config: Config) {
     ctx
       .command("sus.prom.exec <name:string>", "求值提示词")
       .action(async (s, name) => {
-        const result = server.prompts.get(name, s.session);
+        const result = server.prompts.get(name, ctx, s.session);
         return YAML.stringify(result.prompts);
       });
     ctx.command("sus.prom.current", "查看当前提示词").action((s) => {
@@ -115,7 +117,7 @@ export function apply(ctx: Context, config: Config) {
     });
   ctx.command("sus.history", "查看聊天记录").action((s) => {
     return YAML.stringify(
-      server.get_recollect(s.session, current_prompt.get(s.session.cid))
+      server.get_recollect(s.session, current_prompt.get(s.session.cid)),
     );
   });
   ctx.command("sus.history.clean", "清空聊天记录").action((s) => {
@@ -123,8 +125,9 @@ export function apply(ctx: Context, config: Config) {
       ctx,
       s.session,
       current_prompt.get(s.session.cid),
-      (_) => []
+      (_) => [],
     );
+    collected.clean(s.session.cid);
     return "清空成功";
   });
 
@@ -146,18 +149,13 @@ export function apply(ctx: Context, config: Config) {
       config.functionality.tiggering.random_reply.enable &&
       Math.random() < config.functionality.tiggering.random_reply.probability;
     if (!(for_key || for_random)) return next();
-    if (
-      config.functionality.tiggering.random_reply.effect_for_keywords &&
-      !(for_key && for_random)
-    )
-      return next();
     const result = await chat(session, content);
     return result ?? next();
   });
   if (config.functionality.extension_count >= 1) {
     ctx.middleware(async (session, next) => {
       const postprocessing = (
-        await server.get_prompt(current_prompt.get(session.cid), session)
+        await server.get_prompt(current_prompt.get(session.cid), ctx, session)
       ).postprocessing;
       const message: Message = {
         role: "user",
