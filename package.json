@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-sus-chat",
   "description": "超简单超棒的AI聊天, 启动!",
-  "version": "0.9.999999999",
+  "version": "0.10.1-patch3",
   "main": "dist/bundle.js",
   "files": [
     "dist"

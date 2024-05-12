@@ -36,7 +36,7 @@ export interface PromptsFile {
 export interface PromptsFileReal {
   name: string;
   prompts: { role: Role; content: Template[] }[];
-  postprocessing?: Template[];
+  postprocessing?: string;
   keywords?: string[];
   follow: boolean;
   temperature: number;
@@ -53,31 +53,28 @@ export class Prompts {
   prompts_map: {
     [key: string]: PromptsFileReal;
   } = {};
-  init_func?: (
-    this: Liquid,
-    arg0: Context,
-    arg1: typeof Liquid,
-  ) => void;
+  init_func?: (this: Liquid, arg0: Context, arg1: typeof Liquid) => void;
   get_liquid(ctx?: Context, session?: Session): Liquid {
     const liquid = new Liquid();
-    logger.info("load init.js");
     if (!!ctx && !!this.init_func) {
       const init_func = this.init_func;
-      liquid.plugin(function(Liquid) {
+      liquid.plugin(function (Liquid) {
         init_func.call(this, ctx, Liquid);
       });
     }
-    if (!!session) {
-      class SendExt extends Send {
-        constructor(token: TagToken, remainTokens: TopLevelToken[], liquid: Liquid) {
-          super(token, remainTokens, liquid, session)
-        }
-      }
-      liquid.registerTag("send", SendExt);
-    }
+    liquid.registerTag("send", {
+      *render(ctx, emitter, hash) {
+        const str = yield this.value.value(ctx);
+        session?.send(str);
+      },
+      parse(token, remainingTokens) {
+        this.value = new Value(token.args, this.liquid);
+      },
+    });
     return liquid;
   }
   reload(ctx: Context, directory: string) {
+    logger.info("load prompts");
     const init_file_path = path.join(directory, "init.js");
     if (fs.existsSync(init_file_path)) {
       this.init_func = require(path.resolve(path.join(init_file_path)));
@@ -88,24 +85,22 @@ export class Prompts {
     let prompts: PromptsFile[] = files.map((file) => {
       const content_string = fs.readFileSync(
         path.join(directory, file),
-        "utf-8",
+        "utf-8"
       );
       const content: PromptsFile = YAML.parse(content_string);
       return content;
     });
+    const liquid = this.get_liquid(ctx);
     prompts.forEach((prompt) => {
       const prompts: { role: Role; content: Template[] }[] = prompt.prompts.map(
         (prompt) => {
-          return { role: prompt.role, content: this.get_liquid(ctx).parse(prompt.content) };
-        },
+          return { role: prompt.role, content: liquid.parse(prompt.content) };
+        }
       );
-      const postprocessing = prompt.postprocessing
-        ? this.get_liquid(ctx).parse(prompt.postprocessing)
-        : undefined;
       this.prompts_map[prompt.name] = {
         name: prompt.name,
         prompts,
-        postprocessing,
+        postprocessing: prompt.postprocessing,
         keywords: prompt.keywords,
         follow: !!prompt.follow,
         temperature: prompt.temperature ?? this.origin_config.temperature,
@@ -123,12 +118,13 @@ export class Prompts {
     return this.prompts_map[name]?.keywords ?? [];
   }
   get(name: string, ctx: Context, session: Session): PromptsReal {
+    const liquid = this.get_liquid(ctx, session);
     if (!this.prompts_map[name]) {
       throw "prompt not found";
     }
     const temp = this.prompts_map[name];
     const messages: Message[] = temp.prompts.map((message) => {
-      const content = this.get_liquid(ctx, session).renderSync(message.content, {
+      const content = liquid.renderSync(message.content, {
         session: JSON.parse(JSON.stringify(session)),
       });
       return { role: message.role, content };
@@ -136,7 +132,7 @@ export class Prompts {
     let postprocessing: (message: Message) => Message;
     if (temp.postprocessing) {
       postprocessing = (message: Message) => {
-        const content: string = this.get_liquid(ctx, session).renderSync(temp.postprocessing, {
+        const content: string = liquid.parseAndRenderSync(temp.postprocessing, {
           message: message,
           session: JSON.parse(JSON.stringify(session)),
         });
@@ -162,9 +158,6 @@ export class ChatServer {
   persistence: boolean;
   openai: OpenAI;
   origin_config: Config;
-  get liquid() {
-    return this.#liquid ?? this.prompts.get_liquid();
-  }
   get recollect() {
     return this.#recollect;
   }
@@ -188,7 +181,7 @@ export class ChatServer {
     ctx: Context,
     session: Session | { cid: string },
     prompt_name: string,
-    callback: (messages: Message[]) => Message[],
+    callback: (messages: Message[]) => Message[]
   ) {
     if (typeof this.#recollect[session.cid] == "undefined") {
       this.#recollect[session.cid] = {};
@@ -197,7 +190,7 @@ export class ChatServer {
       this.#recollect[session.cid][prompt_name] = [];
     }
     this.#recollect[session.cid][prompt_name] = callback(
-      this.#recollect[session.cid][prompt_name],
+      this.#recollect[session.cid][prompt_name]
     );
     this.#limit_length();
     if (this.persistence) {
@@ -205,18 +198,18 @@ export class ChatServer {
         ctx.baseDir,
         "data",
         "sus-recollect",
-        encodeURIComponent(session.cid),
+        encodeURIComponent(session.cid)
       );
       const file = `${encodeURIComponent(prompt_name)}.json`;
       try {
         fs.mkdirSync(dir, { recursive: true });
-      } catch { }
+      } catch {}
       fs.writeFileSync(
         `${dir}/${file}`,
         JSON.stringify(this.#recollect[session.cid][prompt_name]),
         {
           encoding: "utf-8",
-        },
+        }
       );
     }
   }
@@ -239,7 +232,7 @@ export class ChatServer {
         const prompt_name = decodeURIComponent(file.slice(0, -5));
         const content = fs.readFileSync(
           `${dir}/${subdirectory.name}/${file}`,
-          "utf-8",
+          "utf-8"
         );
         this.update_recollect(ctx, { cid }, prompt_name, (_messages) => {
           return JSON.parse(content) as Message[];
@@ -259,9 +252,16 @@ export class ChatServer {
     this.openai = new OpenAI({ baseURL: config.api, apiKey: config.api_key });
     this.origin_config = config;
   }
-  async evaluate(session: Session, content: string): Promise<string> {
+  get_liquid(ctx?: Context, session?: Session): Liquid {
+    return this.#liquid ?? this.prompts.get_liquid(ctx, session);
+  }
+  async evaluate(
+    ctx: Context,
+    session: Session,
+    content: string
+  ): Promise<string> {
     return (
-      (await this.liquid.parseAndRender(content, {
+      (await this.get_liquid(ctx, session).parseAndRender(content, {
         session: JSON.parse(JSON.stringify(session)),
       })) ?? content
     );
@@ -269,7 +269,7 @@ export class ChatServer {
   async get_prompt(
     prompt_name: string,
     ctx: Context,
-    session: Session,
+    session: Session
   ): Promise<PromptsReal> {
     if (typeof this.prompts === "undefined") {
       return {
@@ -293,7 +293,7 @@ export class ChatServer {
     message: Message,
     prompt_name: string,
     ctx: Context,
-    session: Session,
+    session: Session
   ): Promise<Message | undefined> {
     const recall = this.get_recollect(session, prompt_name);
     if (message.content.trim() == "") {
@@ -302,7 +302,7 @@ export class ChatServer {
     const prompt_real: PromptsReal = await this.get_prompt(
       prompt_name,
       ctx,
-      session,
+      session
     );
     let messages: Message[];
     if (prompt_real) {
@@ -315,6 +315,10 @@ export class ChatServer {
       messages,
       model: this.origin_config.model,
       temperature: prompt_real.temperature,
+      max_tokens: this.origin_config.max_tokens,
+      top_p: this.origin_config.top_p,
+      frequency_penalty: this.origin_config.frequency_penalty,
+      presence_penalty: this.origin_config.presence_penalty,
     });
 
     const result_p = prompt_real.postprocessing(res.choices[0].message);
@@ -324,20 +328,9 @@ export class ChatServer {
       messages.push(result ?? res.choices[0].message);
       return messages;
     });
+    if (this.origin_config.functionality.logging) {
+      logger.info("assistant:", res.choices[0]?.message?.content);
+    }
     return result;
-  }
-}
-
-class Send extends Tag {
-  k_session: Session;
-  private value: Value;
-  constructor(token: TagToken, remainTokens: TopLevelToken[], liquid: Liquid, session: Session) {
-    super(token, remainTokens, liquid);
-    this.value = new Value(token.args, liquid);
-    this.k_session = session;
-  }
-  *render(ctx: LContext, _emitter: Emitter) {
-    const str: string = yield this.value.value(ctx);
-    this.k_session.send(str);
   }
 }

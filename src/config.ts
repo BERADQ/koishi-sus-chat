@@ -6,6 +6,10 @@ export interface Config {
   api_key: string;
   model: string;
   temperature: number;
+  max_tokens: number;
+  top_p: number;
+  frequency_penalty: number;
+  presence_penalty: number;
   max_length: number;
   prompt: {
     pro_prompt: boolean;
@@ -34,6 +38,29 @@ export const Config: Schema<Config> = Schema.object({
   api: Schema.string().default(DefaultApi.url).description("API"),
   api_key: Schema.string().default(DefaultApi.key).description("KEY"),
   model: Schema.string().default("gpt-3.5-turbo").description("模型"),
+  max_tokens: Schema.number()
+    .min(1)
+    .step(1)
+    .default(1024)
+    .description("max_tokens(过小会导致输出被截断)"),
+  top_p: Schema.number()
+    .min(0.0)
+    .max(1.0)
+    .step(0.0001)
+    .default(null)
+    .description("top_p(如果不知其用途请不要调节)"),
+  frequency_penalty: Schema.number()
+    .min(-2.0)
+    .max(2.0)
+    .step(0.0001)
+    .default(null)
+    .description("frequency_penalty(如果不知其用途请不要调节)"),
+  presence_penalty: Schema.number()
+    .min(-2.0)
+    .max(2.0)
+    .step(0.0001)
+    .default(null)
+    .description("presence_penalty(如果不知其用途请不要调节)"),
   max_length: Schema.number()
     .role("slider")
     .min(3)
@@ -43,9 +70,9 @@ export const Config: Schema<Config> = Schema.object({
     .description("记忆长度上限"),
   temperature: Schema.number()
     .role("slider")
-    .min(0.001)
-    .max(0.999)
-    .step(0.001)
+    .min(0.0)
+    .max(2.0)
+    .step(0.0001)
     .default(0.5)
     .description("默认温度(会受高阶提示词影响)"),
   prompt: Schema.intersect([
@@ -104,7 +131,7 @@ export const Config: Schema<Config> = Schema.object({
               .default(0.5)
               .min(0)
               .max(1)
-              .step(0.05)
+              .step(0.001)
               .role("slider")
               .description("随机回复概率"),
           }),

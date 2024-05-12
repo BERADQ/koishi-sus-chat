@@ -65,7 +65,7 @@ export function apply(ctx: Context, config: Config) {
       content: [...collected.get(session.cid), my_content.content].join("\n\n"),
     };
     if (config.functionality.logging) {
-      logger.info(`${session.cid}:`, JSON.stringify(message.content));
+      logger.info(`${session.cid}:`, message.content);
     }
     collected.clean(session.cid);
     const result = await server.chat(
@@ -112,7 +112,7 @@ export function apply(ctx: Context, config: Config) {
   ctx
     .command("sus.eval <content:text>", "求值 liquid")
     .action(async (s, content) => {
-      const result = await server.evaluate(s.session, content);
+      const result = await server.evaluate(ctx,s.session, content);
       return result;
     });
   ctx.command("sus.history", "查看聊天记录").action((s) => {
