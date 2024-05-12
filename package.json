@@ -2,7 +2,7 @@
   "name": "koishi-plugin-sus-chat",
   "description": "超简单超棒的AI聊天, 启动!",
   "version": "0.10.1-patch3",
-  "main": "dist/bundle.js",
+  "main": "lib/index.js",
   "files": [
     "dist"
   ],
@@ -94,5 +94,8 @@
   },
   "peerDependencies": {
     "koishi": "^4.17.3"
+  },
+  "dependencies": {
+    "liquidjs": "^10.12.0"
   }
 }

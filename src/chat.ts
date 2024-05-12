@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import OpenAI from "openai";
 import {
   Context as LContext,
   Emitter,
@@ -12,7 +11,7 @@ import {
 } from "liquidjs";
 import { Context, Session } from "koishi";
 import path from "node:path";
-import YAML from "yaml";
+import yaml from "js-yaml";
 import { Config, logger } from "./index";
 export interface ChatRequest {
   model: string;
@@ -31,7 +30,7 @@ export interface PromptsFile {
   postprocessing?: string;
   keywords?: string[] | undefined;
   follow?: boolean | undefined;
-  temperature?: number | undefined;
+  config: unknown | undefined;
 }
 export interface PromptsFileReal {
   name: string;
@@ -39,13 +38,13 @@ export interface PromptsFileReal {
   postprocessing?: string;
   keywords?: string[];
   follow: boolean;
-  temperature: number;
+  config: unknown | undefined;
 }
 export interface PromptsReal {
   postprocessing: (message: Message) => Message;
   prompts: Message[];
   follow: boolean;
-  temperature: number;
+  config: unknown | undefined;
 }
 export class Prompts {
   origin_config: Config;
@@ -87,7 +86,7 @@ export class Prompts {
         path.join(directory, file),
         "utf-8"
       );
-      const content: PromptsFile = YAML.parse(content_string);
+      const content: PromptsFile = yaml.load(content_string) as PromptsFile;
       return content;
     });
     const liquid = this.get_liquid(ctx);
@@ -103,7 +102,7 @@ export class Prompts {
         postprocessing: prompt.postprocessing,
         keywords: prompt.keywords,
         follow: !!prompt.follow,
-        temperature: prompt.temperature ?? this.origin_config.temperature,
+        config: prompt.config,
       };
     });
   }
@@ -145,7 +144,7 @@ export class Prompts {
       prompts: messages,
       postprocessing,
       follow: !!temp.follow,
-      temperature: temp.temperature,
+      config: temp.config,
     };
   }
 }
@@ -156,7 +155,6 @@ export class ChatServer {
   #recollect: { [cid: string]: { [prompt_name: string]: Message[] } };
   max_length: number;
   persistence: boolean;
-  openai: OpenAI;
   origin_config: Config;
   get recollect() {
     return this.#recollect;
@@ -249,7 +247,6 @@ export class ChatServer {
     } else {
       this.prompts = prompts;
     }
-    this.openai = new OpenAI({ baseURL: config.api, apiKey: config.api_key });
     this.origin_config = config;
   }
   get_liquid(ctx?: Context, session?: Session): Liquid {
@@ -283,7 +280,7 @@ export class ChatServer {
         ],
         postprocessing: (message) => message,
         follow: false,
-        temperature: this.origin_config.temperature,
+        config: undefined,
       };
     } else {
       return this.prompts.get(prompt_name, ctx, session);
@@ -310,26 +307,58 @@ export class ChatServer {
     } else {
       messages = [...prompt_real.prompts, ...recall, message];
     }
-    const res = await this.openai.chat.completions.create({
-      stream: false,
-      messages,
-      model: this.origin_config.model,
-      temperature: prompt_real.temperature,
-      max_tokens: this.origin_config.max_tokens,
-      top_p: this.origin_config.top_p,
-      frequency_penalty: this.origin_config.frequency_penalty,
-      presence_penalty: this.origin_config.presence_penalty,
+    const url = prompt_real.config?.["apiUrl"] ?? this.origin_config.api;
+    const filterUndefined = (obj: any) => {
+      const filtered = {};
+      Object.keys(obj).forEach((key) => {
+        if (obj[key] !== undefined) {
+          // 如果值不是 undefined，则将其添加到过滤后的对象中
+          filtered[key] = obj[key];
+        }
+      });
+      return filtered;
+    };
+    const req = Object.assign(
+      {},
+      {
+        model: this.origin_config.model,
+        messages: messages,
+        temperature: this.origin_config.temperature,
+        stream: false,
+      },
+      filterUndefined({
+        model: prompt_real.config?.["model"],
+        max_tokens: prompt_real.config?.["max_tokens"],
+        temperature: prompt_real.config?.["temperature"],
+        top_p: prompt_real.config?.["top_p"],
+        frequency_penalty: prompt_real.config?.["frequency_penalty"],
+        presence_penalty: prompt_real.config?.["presence_penalty"],
+        stop: prompt_real.config?.["stop"],
+        logit_bias: prompt_real.config?.["logit_bias"],
+      })
+    );
+
+    console.log(req);
+    const res = await ctx.http(`${url}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${(
+          prompt_real.config?.["apiToken"] ?? this.origin_config.api_key
+        ).trim()}`,
+      },
+      data: JSON.stringify(req),
     });
 
-    const result_p = prompt_real.postprocessing(res.choices[0].message);
+    const result_p = prompt_real.postprocessing(res.data.choices[0].message);
     const result = result_p.content.trim() == "" ? undefined : result_p;
     this.update_recollect(ctx, session, prompt_name, (messages) => {
       messages.push(message);
-      messages.push(result ?? res.choices[0].message);
+      messages.push(result ?? res.data.choices[0].message);
       return messages;
     });
     if (this.origin_config.functionality.logging) {
-      logger.info("assistant:", res.choices[0]?.message?.content);
+      logger.info("assistant:", res.data.choices[0]?.message?.content);
     }
     return result;
   }

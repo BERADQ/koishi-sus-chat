@@ -1,6 +1,6 @@
 import { Context, Logger, Session } from "koishi";
 import { ChatServer, Message, Prompts, PromptsReal } from "./chat";
-import YAML from "yaml";
+import yaml from "js-yaml";
 import { Config } from "./config";
 
 export const name = "sus-chat";
@@ -99,7 +99,7 @@ export function apply(ctx: Context, config: Config) {
       .command("sus.prom.exec <name:string>", "求值提示词")
       .action(async (s, name) => {
         const result = server.prompts.get(name, ctx, s.session);
-        return YAML.stringify(result.prompts);
+        return yaml.dump(result.prompts);
       });
     ctx.command("sus.prom.current", "查看当前提示词").action((s) => {
       return current_prompt.get(s.session.cid);
@@ -116,7 +116,7 @@ export function apply(ctx: Context, config: Config) {
       return result;
     });
   ctx.command("sus.history", "查看聊天记录").action((s) => {
-    return YAML.stringify(
+    return yaml.dump(
       server.get_recollect(s.session, current_prompt.get(s.session.cid)),
     );
   });
