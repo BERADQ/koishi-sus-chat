@@ -34,27 +34,25 @@ class Collected {
 export const logger = new Logger("sus-chat");
 export function apply(ctx: Context, config: Config) {
   const collected: Collected = new Collected(
-    config.functionality.extension_count,
+    config.functionality.extension_count
   );
-  const current_prompt = new CurrentPropmptName(
-    config.prompt.default_prompt ?? "",
-  );
+  const current_prompt = new CurrentPropmptName(config);
   const server = new ChatServer(
     config,
     config.prompt.pro_prompt
       ? new Prompts(ctx, config.prompt.prompt_directory, config)
-      : config.prompt.prompt_str,
+      : config.prompt.prompt_str
   );
   server.persistence = config.functionality.persistence;
   if (config.functionality.persistence) server.load_recollect(ctx);
   async function chat(
     session: Session,
-    content: string,
+    content: string
   ): Promise<string | null> {
     const prompt_real: PromptsReal = await server.get_prompt(
       current_prompt.get(session.cid),
       ctx,
-      session,
+      session
     );
     const my_content = prompt_real.postprocessing({
       role: "user",
@@ -72,7 +70,7 @@ export function apply(ctx: Context, config: Config) {
       message,
       current_prompt.get(session.cid),
       ctx,
-      session,
+      session
     );
     return result?.content;
   }
@@ -112,12 +110,12 @@ export function apply(ctx: Context, config: Config) {
   ctx
     .command("sus.eval <content:text>", "求值 liquid")
     .action(async (s, content) => {
-      const result = await server.evaluate(ctx,s.session, content);
+      const result = await server.evaluate(ctx, s.session, content);
       return result;
     });
   ctx.command("sus.history", "查看聊天记录").action((s) => {
     return yaml.dump(
-      server.get_recollect(s.session, current_prompt.get(s.session.cid)),
+      server.get_recollect(s.session, current_prompt.get(s.session.cid))
     );
   });
   ctx.command("sus.history.clean", "清空聊天记录").action((s) => {
@@ -125,7 +123,7 @@ export function apply(ctx: Context, config: Config) {
       ctx,
       s.session,
       current_prompt.get(s.session.cid),
-      (_) => [],
+      (_) => []
     );
     collected.clean(s.session.cid);
     return "清空成功";
@@ -169,12 +167,12 @@ export function apply(ctx: Context, config: Config) {
 }
 class CurrentPropmptName {
   current_name: { [key: string]: string } = {};
-  default_prompt: string;
-  constructor(default_prompt: string) {
-    this.default_prompt = default_prompt;
+  config: Config;
+  constructor(config: Config) {
+    this.config = config;
   }
   get(id: string) {
-    return this.current_name[id] ?? this.default_prompt;
+    return this.current_name[id] ?? this.config.prompt.default_prompt ?? "";
   }
   set(id: string, name: string) {
     this.current_name[id] = name;

@@ -69,7 +69,8 @@ export const Config: Schema<Config> = Schema.object({
           .description("提示词文件所在目录"),
         default_prompt: Schema.string()
           .default("default")
-          .description("默认提示词"),
+          .description("默认提示词")
+          .computed(),
       }),
     ]),
   ]),
