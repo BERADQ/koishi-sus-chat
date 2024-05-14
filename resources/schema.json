@@ -79,25 +79,17 @@
           "role": {
             "type": "string",
             "enum": ["user", "assistant", "system"],
-            "description": "角色"
+            "description": "角色",
+            "default": "system"
           },
           "content": {
             "type": "string",
-            "description": "消息内容"
+            "description": "消息内容",
+            "default": "你是个有用的助理"
           }
         },
-        "required": ["role", "content"],
-        "default": {
-          "role": "system",
-          "content": "你是个有用的助理。"
-        }
+        "required": ["role", "content"]
       },
-      "default": [
-        {
-          "role": "system",
-          "content": "你是个有用的助理。"
-        }
-      ],
       "description": "提示词"
     },
     "postprocessing": {
