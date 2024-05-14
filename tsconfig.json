@@ -3,7 +3,7 @@
     "rootDir": "src",
     "outDir": "lib",
     "target": "es2022",
-    "module": "esnext",
+    "module": "commonjs",
     "declaration": true,
     "composite": true,
     "incremental": true,
@@ -12,7 +12,12 @@
     "moduleResolution": "node",
     "jsx": "react-jsx",
     "jsxImportSource": "@satorijs/element",
-    "types": ["node", "yml-register/types"]
+    "types": [
+      "node",
+      "yml-register/types"
+    ]
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

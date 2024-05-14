@@ -1,10 +1,11 @@
 {
   "name": "koishi-plugin-sus-chat",
   "description": "超简单超棒的AI聊天, 启动!",
-  "version": "0.10.1-patch3",
+  "version": "0.10.8",
   "main": "lib/index.js",
   "files": [
-    "dist"
+    "dist",
+    "lib"
   ],
   "license": "MIT",
   "keywords": [
