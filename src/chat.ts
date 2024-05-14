@@ -29,7 +29,7 @@ export interface MessageTemplate {
 }
 
 export interface PromptsFile<M = Message[]> {
-  extend: string;
+  extend?: string | null;
   name: string;
   prompts?: M | null;
   postprocessing?: string | null;

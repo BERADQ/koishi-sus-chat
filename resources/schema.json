@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/product.schema.json",
+  "title": "Product",
+  "description": "sus 提示词 yaml 的格式",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "config": {
+      "type": "object",
+      "properties": {
+        "apiUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "api 地址，结尾必须要 /v1"
+        },
+        "apiToken": {
+          "type": "string",
+          "default": "sk-",
+          "description": "一般是 sk- 开头的，apikey"
+        },
+        "model": {
+          "type": "string",
+          "default": "gpt-3.5-turbo",
+          "description": "模型"
+        },
+        "max_tokens": {
+          "type": "number",
+          "default": 1024,
+          "description": "最大生成长度"
+        },
+        "temperature": {
+          "type": "number",
+          "default": 0.6,
+          "description": "温度"
+        },
+        "top_p": {
+          "type": "number",
+          "default": 1,
+          "description": "top_p"
+        },
+        "frequency_penalty": {
+          "type": "number",
+          "default": 0,
+          "description": "频率惩罚"
+        },
+        "presence_penalty": {
+          "type": "number",
+          "default": 0,
+          "description": "存在惩罚"
+        },
+        "stop": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "停止词"
+        },
+        "logit_bias": {
+          "type": "object",
+          "default": {},
+          "description": "logit_bias"
+        }
+      },
+      "additionalProperties": false
+    },
+    "extend": {
+      "type": "string",
+      "description": "该文件继承于"
+    },
+    "prompts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["user", "assistant", "system"],
+            "description": "角色"
+          },
+          "content": {
+            "type": "string",
+            "description": "消息内容"
+          }
+        },
+        "required": ["role", "content"],
+        "default": {
+          "role": "system",
+          "content": "你是个有用的助理。"
+        }
+      },
+      "default": [
+        {
+          "role": "system",
+          "content": "你是个有用的助理。"
+        }
+      ],
+      "description": "提示词"
+    },
+    "postprocessing": {
+      "type": "string"
+    },
+    "keywords": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "follow": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": ["name"],
+  "additionalProperties": false
+}
