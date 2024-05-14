@@ -23,22 +23,19 @@ export interface Message {
   role: Role;
   content: string;
 }
-
-export interface PromptsFile {
-  name: string;
-  prompts: Message[];
-  postprocessing?: string;
-  keywords?: string[] | undefined;
-  follow?: boolean | undefined;
-  config: unknown | undefined;
+export interface MessageTemplate {
+  role: Role;
+  content: Template[];
 }
-export interface PromptsFileReal {
+
+export interface PromptsFile<M = Message[]> {
+  extend: string;
   name: string;
-  prompts: { role: Role; content: Template[] }[];
-  postprocessing?: string;
-  keywords?: string[];
-  follow: boolean;
-  config: unknown | undefined;
+  prompts?: M | null;
+  postprocessing?: string | null;
+  keywords?: string[] | null;
+  follow?: boolean | null;
+  config: unknown | null;
 }
 export interface PromptsReal {
   postprocessing: (message: Message) => Message;
@@ -50,7 +47,7 @@ export class Prompts {
   origin_config: Config;
   directory: string;
   prompts_map: {
-    [key: string]: PromptsFileReal;
+    [key: string]: PromptsFile<MessageTemplate[]>;
   } = {};
   init_func?: (this: Liquid, arg0: Context, arg1: typeof Liquid) => void;
   get_liquid(ctx?: Context, session?: Session): Liquid {
@@ -91,19 +88,13 @@ export class Prompts {
     });
     const liquid = this.get_liquid(ctx);
     prompts.forEach((prompt) => {
-      const prompts: { role: Role; content: Template[] }[] = prompt.prompts.map(
-        (prompt) => {
+      const prompts: { role: Role; content: Template[] }[] =
+        prompt.prompts?.map((prompt) => {
           return { role: prompt.role, content: liquid.parse(prompt.content) };
-        }
-      );
-      this.prompts_map[prompt.name] = {
-        name: prompt.name,
-        prompts,
-        postprocessing: prompt.postprocessing,
-        keywords: prompt.keywords,
-        follow: !!prompt.follow,
-        config: prompt.config,
-      };
+        });
+      this.prompts_map[prompt.name] = Object.assign({}, prompt, {
+        prompts: prompts,
+      });
     });
   }
   constructor(ctx: Context, directory: string, config: Config) {
@@ -122,7 +113,7 @@ export class Prompts {
       throw "prompt not found";
     }
     const temp = this.prompts_map[name];
-    const messages: Message[] = temp.prompts.map((message) => {
+    const messages: Message[] | null = temp.prompts?.map((message) => {
       const content = liquid.renderSync(message.content, {
         session: JSON.parse(JSON.stringify(session)),
       });
@@ -140,12 +131,16 @@ export class Prompts {
     } else {
       postprocessing = (message: Message) => message;
     }
-    return {
+    let target = {
       prompts: messages,
       postprocessing,
       follow: !!temp.follow,
       config: temp.config,
     };
+    if (typeof temp.extend == "string") {
+      target = Object.assign({}, this.get(temp.extend, ctx, session), target);
+    }
+    return target;
   }
 }
 export class ChatServer {
