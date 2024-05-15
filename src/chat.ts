@@ -138,7 +138,11 @@ export class Prompts {
       config: temp.config,
     };
     if (typeof temp.extend == "string") {
-      target = Object.assign({}, this.get(temp.extend, ctx, session), target);
+      target = Object.assign(
+        {},
+        this.get(temp.extend, ctx, session),
+        filterUndefined(target)
+      );
     }
     return target;
   }
@@ -303,16 +307,7 @@ export class ChatServer {
       messages = [...prompt_real.prompts, ...recall, message];
     }
     const url = prompt_real.config?.["apiUrl"] ?? this.origin_config.api;
-    const filterUndefined = (obj: any) => {
-      const filtered = {};
-      Object.keys(obj).forEach((key) => {
-        if (obj[key] !== undefined) {
-          // 如果值不是 undefined，则将其添加到过滤后的对象中
-          filtered[key] = obj[key];
-        }
-      });
-      return filtered;
-    };
+
     const req = Object.assign(
       {},
       {
@@ -357,4 +352,14 @@ export class ChatServer {
     }
     return result;
   }
+}
+function filterUndefined(obj: any) {
+  const filtered = {};
+  Object.keys(obj).forEach((key) => {
+    if (obj[key] !== undefined) {
+      // 如果值不是 undefined，则将其添加到过滤后的对象中
+      filtered[key] = obj[key];
+    }
+  });
+  return filtered;
 }
