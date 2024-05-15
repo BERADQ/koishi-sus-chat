@@ -39,7 +39,7 @@ export interface PromptsFile<M = Message[]> {
 }
 export interface PromptsReal {
   postprocessing: (message: Message) => Message;
-  prompts: Message[];
+  prompts?: Message[] | null;
   follow: boolean;
   config: unknown | undefined;
 }
@@ -131,8 +131,8 @@ export class Prompts {
     } else {
       postprocessing = (message: Message) => message;
     }
-    let target = {
-      prompts: messages,
+    let target:PromptsReal = {
+      prompts: messages ?? [],
       postprocessing,
       follow: !!temp.follow,
       config: temp.config,
@@ -292,7 +292,7 @@ export class ChatServer {
     session: Session
   ): Promise<Message | undefined> {
     const recall = this.get_recollect(session, prompt_name);
-    if (message.content.trim() == "") {
+    if (message.content.trim() == "" || typeof message.content != "string") {
       return undefined;
     }
     const prompt_real: PromptsReal = await this.get_prompt(
@@ -302,9 +302,9 @@ export class ChatServer {
     );
     let messages: Message[];
     if (prompt_real) {
-      messages = [...recall, ...prompt_real.prompts, message];
+      messages = [...recall, ...(prompt_real.prompts??[]), message];
     } else {
-      messages = [...prompt_real.prompts, ...recall, message];
+      messages = [...(prompt_real.prompts??[]), ...recall, message];
     }
     const url = prompt_real.config?.["apiUrl"] ?? this.origin_config.api;
 
