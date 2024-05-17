@@ -325,6 +325,7 @@ export class ChatServer {
         presence_penalty: prompt_real.config?.["presence_penalty"],
         stop: prompt_real.config?.["stop"],
         logit_bias: prompt_real.config?.["logit_bias"],
+        prompt: prompt_real.config?.["prompt"],
       })
     );
 
