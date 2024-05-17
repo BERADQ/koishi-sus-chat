@@ -25,6 +25,7 @@ export interface Config {
         keywords_for_triggering: string[];
         use_regex: boolean;
       };
+      when_direct_reply: boolean;
     };
   };
 }
@@ -117,6 +118,9 @@ export const Config: Schema<Config> = Schema.object({
           .default(false)
           .description("关键词是否使用正则表达式"),
       }).description("关键词触发"),
+      when_direct_reply: Schema.boolean()
+        .default(false)
+        .description("是否于私聊时无需任何方式，直接触发"),
     }),
   }).description("功能性"),
 });

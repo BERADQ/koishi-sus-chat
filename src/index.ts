@@ -129,9 +129,10 @@ export function apply(ctx: Context, config: Config) {
     return "清空成功";
   });
 
-  // 随机回复与关键词触发
+  // 随机回复与关键词触发与私聊触发
   ctx.middleware(async (session, next) => {
     const content = session.content;
+    session.isDirect
     let for_key = false;
     const keywords = [
       ...server.prompts?.get_keywords(current_prompt.get(session.cid)),
@@ -146,7 +147,8 @@ export function apply(ctx: Context, config: Config) {
     const for_random =
       config.functionality.tiggering.random_reply.enable &&
       Math.random() < config.functionality.tiggering.random_reply.probability;
-    if (!(for_key || for_random)) return next();
+    const for_direct = config.functionality.tiggering.when_direct_reply && session.isDirect;
+    if (!(for_key || for_random || for_direct)) return next();
     const result = await chat(session, content);
     return result ?? next();
   });
