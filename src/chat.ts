@@ -301,7 +301,7 @@ export class ChatServer {
       session
     );
     let messages: Message[];
-    if (prompt_real) {
+    if (prompt_real.follow) {
       messages = [...recall, ...(prompt_real.prompts??[]), message];
     } else {
       messages = [...(prompt_real.prompts??[]), ...recall, message];
