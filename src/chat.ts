@@ -35,6 +35,7 @@ export interface PromptsFile<M = Message[]> {
   postprocessing?: string | null;
   keywords?: string[] | null;
   follow?: boolean | null;
+  preamble?: string | null;
   config: unknown | null;
 }
 export interface PromptsReal {
@@ -42,6 +43,7 @@ export interface PromptsReal {
   prompts?: Message[] | null;
   follow: boolean;
   config: unknown | undefined;
+  preamble: string | null;
 }
 export class Prompts {
   origin_config: Config;
@@ -136,6 +138,7 @@ export class Prompts {
       postprocessing,
       follow: !!temp.follow,
       config: temp.config,
+      preamble: temp.preamble,
     };
     if (typeof temp.extend == "string") {
       target = Object.assign(
@@ -277,6 +280,7 @@ export class ChatServer {
             }),
           },
         ],
+        preamble: null,
         postprocessing: (message) => message,
         follow: false,
         config: undefined,
@@ -302,10 +306,20 @@ export class ChatServer {
     );
     let messages: Message[];
     if (prompt_real?.follow) {
-      messages = [...recall, ...(prompt_real.prompts ?? []), message];
+      messages = [...recall, ...(prompt_real.prompts ?? [])];
     } else {
-      messages = [...(prompt_real.prompts ?? []), ...recall, message];
+      messages = [...(prompt_real.prompts ?? []), ...recall];
     }
+    if (prompt_real.preamble) {
+      const liquid = this.prompts.get_liquid(ctx, session);
+      messages.push({
+        role: "system",
+        content: liquid.parseAndRenderSync(prompt_real.preamble, {
+          session: JSON.parse(JSON.stringify(session)),
+        }),
+      });
+    }
+    messages.push(message);
     const url = prompt_real.config?.["apiUrl"] ?? this.origin_config.api;
 
     const req = Object.assign(
