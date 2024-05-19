@@ -131,7 +131,7 @@ export class Prompts {
     } else {
       postprocessing = (message: Message) => message;
     }
-    let target:PromptsReal = {
+    let target: PromptsReal = {
       prompts: messages ?? [],
       postprocessing,
       follow: !!temp.follow,
@@ -301,10 +301,10 @@ export class ChatServer {
       session
     );
     let messages: Message[];
-    if (prompt_real.follow) {
-      messages = [...recall, ...(prompt_real.prompts??[]), message];
+    if (prompt_real?.follow) {
+      messages = [...recall, ...(prompt_real.prompts ?? []), message];
     } else {
-      messages = [...(prompt_real.prompts??[]), ...recall, message];
+      messages = [...(prompt_real.prompts ?? []), ...recall, message];
     }
     const url = prompt_real.config?.["apiUrl"] ?? this.origin_config.api;
 

@@ -131,12 +131,12 @@ export function apply(ctx: Context, config: Config) {
 
   // 随机回复与关键词触发与私聊触发
   ctx.middleware(async (session, next) => {
-    const content = session.content;
-    session.isDirect
+    const content = session?.content;
+    if (!content) return next();
     let for_key = false;
     const keywords = [
-      ...server.prompts?.get_keywords(current_prompt.get(session.cid)),
-      ...config.functionality.tiggering.keywords.keywords_for_triggering,
+      ...server.prompts?.get_keywords(current_prompt.get(session.cid)) ?? [],
+      ...config.functionality.tiggering.keywords?.keywords_for_triggering ?? [],
     ];
     for (const key of keywords) {
       if (content.includes(key)) {
@@ -145,24 +145,25 @@ export function apply(ctx: Context, config: Config) {
       }
     }
     const for_random =
-      config.functionality.tiggering.random_reply.enable &&
-      Math.random() < config.functionality.tiggering.random_reply.probability;
-    const for_direct = config.functionality.tiggering.when_direct_reply && session.isDirect;
+      config.functionality.tiggering?.random_reply?.enable &&
+      Math.random() < config.functionality.tiggering?.random_reply?.probability;
+    const for_direct =
+      config.functionality.tiggering?.when_direct_reply && session?.isDirect;
     if (!(for_key || for_random || for_direct)) return next();
-    const result = await chat(session, content);
+    const result = await chat?.(session, content);
     return result ?? next();
   });
   if (config.functionality.extension_count >= 1) {
     ctx.middleware(async (session, next) => {
       const postprocessing = (
-        await server.get_prompt(current_prompt.get(session.cid), ctx, session)
-      ).postprocessing;
+        await server?.get_prompt(current_prompt?.get(session.cid), ctx, session)
+      )?.postprocessing;
       const message: Message = {
         role: "user",
         content: session.content,
       };
       const result = postprocessing(message);
-      collected.add(session.cid, result.content);
+      collected?.add(session.cid, result?.content);
       return next();
     });
   }
