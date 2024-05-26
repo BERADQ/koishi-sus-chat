@@ -1,14 +1,5 @@
 import fs from "node:fs";
-import {
-  Context as LContext,
-  Emitter,
-  Liquid,
-  Tag,
-  TagToken,
-  Template,
-  TopLevelToken,
-  Value,
-} from "liquidjs";
+import { Liquid, Template, Value } from "liquidjs";
 import { Context, Session } from "koishi";
 import path from "node:path";
 import yaml from "js-yaml";
@@ -37,6 +28,7 @@ export interface PromptsFile<M = Message[]> {
   follow?: boolean | null;
   preamble?: string | null;
   config: unknown | null;
+  prologue?: string | null;
 }
 export interface PromptsReal {
   postprocessing: (message: Message) => Message;
@@ -44,6 +36,7 @@ export interface PromptsReal {
   follow: boolean;
   config: unknown | undefined;
   preamble: string | null;
+  prologue: string | null;
 }
 export class Prompts {
   origin_config: Config;
@@ -139,6 +132,7 @@ export class Prompts {
       follow: !!temp.follow,
       config: temp.config,
       preamble: temp.preamble,
+      prologue: temp.prologue,
     };
     if (typeof temp.extend == "string") {
       target = Object.assign(
@@ -171,9 +165,16 @@ export class ChatServer {
   #limit_length() {
     for (const cid in this.#recollect) {
       for (const prompt_name in this.#recollect[cid]) {
-        while (this.#recollect[cid][prompt_name].length > this.max_length) {
-          this.#recollect[cid][prompt_name].shift();
+        if (this.#recollect[cid][prompt_name].length <= this.max_length) {
+          continue;
         }
+        const new_arr = this.#recollect[cid][prompt_name].slice(
+          this.#recollect[cid][prompt_name].length - this.max_length
+        );
+        while (new_arr[0]?.role != "user") {
+          new_arr.shift();
+        }
+        this.#recollect[cid][prompt_name] = new_arr;
       }
     }
   }
@@ -284,6 +285,7 @@ export class ChatServer {
         postprocessing: (message) => message,
         follow: false,
         config: undefined,
+        prologue: null,
       };
     } else {
       return this.prompts.get(prompt_name, ctx, session);
@@ -306,20 +308,32 @@ export class ChatServer {
     );
     let messages: Message[];
     if (prompt_real?.follow) {
-      messages = [...recall, ...(prompt_real.prompts ?? [])];
+      messages = [...recall, ...(prompt_real?.prompts ?? [])];
     } else {
-      messages = [...(prompt_real.prompts ?? []), ...recall];
+      messages = [...(prompt_real?.prompts ?? []), ...recall];
     }
-    if (prompt_real.preamble) {
-      const liquid = this.prompts.get_liquid(ctx, session);
+
+    const liquid = this.prompts?.get_liquid?.(ctx, session);
+    if (prompt_real?.preamble && liquid) {
+      const preamble = liquid.parseAndRenderSync(prompt_real.preamble, {
+        session: JSON.parse(JSON.stringify(session)),
+      });
       messages.push({
         role: "system",
-        content: liquid.parseAndRenderSync(prompt_real.preamble, {
-          session: JSON.parse(JSON.stringify(session)),
-        }),
+        content: preamble,
       });
     }
-    messages.push(message);
+    let prologue = "";
+    if (typeof liquid != "undefined" && prompt_real.prologue) {
+      prologue = liquid.parseAndRenderSync(prompt_real.prologue, {
+        session: JSON.parse(JSON.stringify(session)),
+      });
+    }
+    messages.push({ role: message.role, content: prologue + message.content });
+
+    if (this.origin_config.functionality.logging) {
+      logger.info(`${session.cid}:`, prologue + message.content);
+    }
     const url = prompt_real.config?.["apiUrl"] ?? this.origin_config.api;
 
     const req = Object.assign(
@@ -340,10 +354,9 @@ export class ChatServer {
         stop: prompt_real.config?.["stop"],
         logit_bias: prompt_real.config?.["logit_bias"],
         prompt: prompt_real.config?.["prompt"],
+        ...prompt_real.config?.["extra"],
       })
     );
-
-    console.log(req);
     const res = await ctx.http(`${url}/chat/completions`, {
       method: "POST",
       headers: {

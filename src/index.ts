@@ -1,6 +1,7 @@
 import { Context, Logger, Session } from "koishi";
 import { ChatServer, Message, Prompts, PromptsReal } from "./chat";
 import yaml from "js-yaml";
+import he from "he";
 import { Config } from "./config";
 
 export const name = "sus-chat";
@@ -49,22 +50,21 @@ export function apply(ctx: Context, config: Config) {
     session: Session,
     content: string
   ): Promise<string | null> {
+    const liquid = server.prompts?.get_liquid?.(ctx, session);
     const prompt_real: PromptsReal = await server.get_prompt(
       current_prompt.get(session.cid),
       ctx,
       session
     );
+
     const my_content = prompt_real.postprocessing({
       role: "user",
-      content: content,
+      content,
     });
     const message: Message = {
       role: "user",
-      content: [...collected.get(session.cid), my_content.content].join("\n\n"),
+      content: [...collected.get(session.cid), my_content.content].join("\n"),
     };
-    if (config.functionality.logging) {
-      logger.info(`${session.cid}:`, message.content);
-    }
     collected.clean(session.cid);
     const result = await server.chat(
       message,
@@ -131,13 +131,14 @@ export function apply(ctx: Context, config: Config) {
 
   // 随机回复与关键词触发与私聊触发
   ctx.middleware(async (session, next) => {
-    const content = session?.content;
+    const content = he.decode(session.content);
     if (!content) return next();
     let for_key = false;
-    const keywords = [
-      ...server.prompts?.get_keywords(current_prompt.get(session.cid)) ?? [],
-      ...config.functionality.tiggering.keywords?.keywords_for_triggering ?? [],
-    ];
+    let k1 = server.prompts?.get_keywords(current_prompt.get(session.cid));
+    let k2 = config.functionality.tiggering.keywords?.keywords_for_triggering;
+    if (!(k1 instanceof Array)) k1 = [];
+    if (!(k2 instanceof Array)) k2 = [];
+    const keywords = [...k1, ...k2];
     for (const key of keywords) {
       if (content.includes(key)) {
         for_key = true;
